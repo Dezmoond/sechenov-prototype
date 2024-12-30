@@ -19,4 +19,4 @@ https://drive.google.com/drive/folders/1I06Mz8BPWr2i5vJrGvoBZa_H9fru_af-?usp=sha
 На сервере необходимо использование ollama server https://ollama.com/download
 
 установка модели vision:
-ollama run llama3.2-vision:11b или ollama run llama3.2-vision:90b
+ollama run llama3.2-vision:11b (8gb) или ollama run llama3.2-vision:90b (55gb)
