@@ -7,8 +7,8 @@ from jiwer import wer
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print('Using device:', device)
 
-# Путь к моделимими
-model_path = "E:/KPI/1LAMA1/lama10"
+# Путь к модели
+model_path = "lama/"
 
 # Загрузка токенизатора и модели
 tokenizer = PreTrainedTokenizerFast.from_pretrained(model_path)
@@ -88,7 +88,7 @@ def generate_response(input_text):
 
 
 # Чтение данных из файла
-with open('onlyfinal/testllama_2.txt', 'r', encoding='utf-8') as file:
+with open('dataset/testonlyllama_1.txt', 'r', encoding='utf-8') as file:
     data = json.load(file)
 
 # Статистика по WER
