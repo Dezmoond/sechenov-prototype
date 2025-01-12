@@ -3,7 +3,7 @@
 
 https://github.com/Dezmoond/sechenov-prototype.git
 
-cd lama4
+cd sechenov-prototype
 
 python -m venv venv
 
