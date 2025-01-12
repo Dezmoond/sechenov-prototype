@@ -24,3 +24,5 @@ https://drive.google.com/file/d/13To9TZvuc9tuOxXgn2vqU2jrcvGlTvxg/view?usp=shari
 
 установка модели vision:
 ollama run llama3.2-vision:11b (8gb) или ollama run llama3.2-vision:90b (55gb)
+______________________________
+Finetuning.py - обучение модели llama
