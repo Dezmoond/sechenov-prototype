@@ -249,39 +249,6 @@ def show_instruction(message):
     bot.send_photo(message.chat.id, open("image/instr2.PNG", "rb"))
     bot.send_message(message.chat.id, '''- Поделитесь файлом указав приложение Telegram и выбрав наш телеграм-бот в качестве получателя. \n\n 2) Пришлите фотографию чека (ВАЖНО! Названия товаров должны быть хорошо различимы) или нажмите на кнопку "Фото чека" 3) Введите название товара нажав кнопку "Ввести вручную" \n\n В случае сканирования QR или отправки фотографии нужно выбрать товар который будет использован в вашем рационе.''', reply_markup=markup)
 
-## Чтение CSV с категориями
-#category_mapping_df = pd.read_csv('category_mapping.csv')
-#
-## Создание словаря для категорий
-#id2label = dict(zip(category_mapping_df['Numeric Value'], category_mapping_df['Category Name']))
-#model_name = "model/"  # Пример, используйте вашу модель
-#model = BertForSequenceClassification.from_pretrained(model_name, num_labels=len(id2label))
-#tokenizer = BertTokenizer.from_pretrained(model_name)
-#model.eval()
-## Определение категории товара с помощью BERT
-#def predict_category_with_confidence(product_name, model, tokenizer, max_length=200):
-#    inputs = tokenizer(
-#        product_name,
-#        max_length=max_length,
-#        padding='max_length',
-#        truncation=True,
-#        return_tensors="pt"
-#    )
-#    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-#    model.to(device)
-#    inputs = {key: val.to(device) for key, val in inputs.items()}
-#
-#    with torch.no_grad():
-#        outputs = model(**inputs)
-#        logits = outputs.logits
-#        probabilities = torch.softmax(logits, dim=1).squeeze()
-#        predicted_class = torch.argmax(probabilities).item()
-#        confidence = probabilities[predicted_class].item()
-#
-#    # Получение метки категории по числовому значению
-#    predicted_label = id2label.get(predicted_class, "Неизвестно")
-#
-#    return predicted_label, confidence
 
 # Асинхронная функция для получения пищевых данных из Llama
 async def get_nutrition_facts(product_name, user_id):
