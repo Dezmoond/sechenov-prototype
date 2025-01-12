@@ -1,24 +1,69 @@
 import telebot
 from uuid import uuid4  # для генерации уникальных идентификаторов
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from telebot import TeleBot, types
 import torch
-from transformers import BertForSequenceClassification, BertTokenizer
+import threading
+
 import json
 import ollama
 import asyncio
 from dotenv import load_dotenv
 import os
-
+import uuid
 from PIL import Image
 from io import BytesIO
 import pandas as pd
 import re
+import csv
 import base64
 import io
 from sqlalchemy import create_engine, Column, Integer, String, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker  # Изменен импорт
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime
+import pickle
+from transformers import PreTrainedTokenizerFast, AutoModelForCausalLM
+
+# Создаем словарь для подкатегорий
+df = pd.read_csv('merged_file.csv')
+
+# Создадим словарь для быстрого поиска названия категории по подкатегории
+subcategory_to_category = dict(zip(df['Sub'], df['Category Name']))
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print('Using device:', device)
+# Путь к сохранённым файлам
+vectorizer_path = '1eatornotv.pkl'
+model_forest = '1eatormotm.pkl'
+# Загрузка TfidfVectorizer
+with open(vectorizer_path, 'rb') as file:
+    loaded_vectorizer = pickle.load(file)
+
+# Загрузка модели
+with open(model_forest, 'rb') as file:
+    loaded_model = pickle.load(file)
+# Путь к модели
+model_path = "E:/KPI/1LAMA1/lama8"
+
+# Загрузка токенизатора и модели
+tokenizer = PreTrainedTokenizerFast.from_pretrained(model_path)
+model = AutoModelForCausalLM.from_pretrained(model_path).to(device)
+
+# Проверка типа pad_token_id и исправление, если это список
+print(f"pad_token_id type: {type(model.config.pad_token_id)}")
+print(f"pad_token_id value: {model.config.pad_token_id}")
+
+if isinstance(model.config.pad_token_id, list):
+    model.config.pad_token_id = model.config.pad_token_id[0]
+    print(f"pad_token_id was a list, now set to: {model.config.pad_token_id}")
+
+# Установка pad_token_id, если оно не задано
+if model.config.pad_token_id is None:
+    model.config.pad_token_id = model.config.eos_token_id[0] if isinstance(model.config.eos_token_id,
+                                                                           list) else model.config.eos_token_id
+    print(f"pad_token_id was not set, set to eos_token_id: {model.config.pad_token_id}")
+
 
 # Определяем базовый класс
 Base = declarative_base()
@@ -58,15 +103,15 @@ class NutritionRequest(Base):
     category = Column(String)
 
 # Функция для записи данных в базу данных
-def record_nutrition_request(user_id, product, calories, protein, fat, carbohydrates, category):
+def record_nutrition_request(user_id, product, category):
     session = Session()
     new_request = NutritionRequest(
         user_id=user_id,  # Сохраняем идентификатор пользователя
         product=product,
-        calories=calories,
-        protein=protein,
-        fat=fat,
-        carbohydrates=carbohydrates,
+        calories=0,
+        protein=0,
+        fat=0,
+        carbohydrates=0,
         category=category
     )
     session.add(new_request)
@@ -76,24 +121,42 @@ def record_nutrition_request(user_id, product, calories, protein, fat, carbohydr
 # Команда /start
 @bot.message_handler(commands=['start'])
 def start(message):
-    markup = InlineKeyboardMarkup()
+    # Inline-кнопки
+    inline_markup = InlineKeyboardMarkup()
     install_all = InlineKeyboardButton("Считать QR чека", callback_data="read_qr")
     instruction = InlineKeyboardButton("Инструкция", callback_data="show_instruction")
     photo_button = InlineKeyboardButton("📷 Отправить фото чека", callback_data="request_photo")
     nutrition_button = InlineKeyboardButton("🍽️ Ввести продукт вручную", callback_data="get_nutrition")
-    markup.add(nutrition_button)
-    markup.add(install_all)
-    markup.add(instruction)
-    # Кнопка для отправки фотографии
+    inline_markup.add(nutrition_button)
+    inline_markup.add(install_all)
+    inline_markup.add(instruction)
+    inline_markup.add(photo_button)
 
-    markup.add(photo_button)
+    # Reply-кнопки
+    reply_markup = ReplyKeyboardMarkup(resize_keyboard=True)
+    start_button = KeyboardButton("🔄 Начать")
+    reply_markup.add(start_button)
 
+    # Отправляем фото и сообщение
     with open("image/137761-mgmu_imeni_i_m_sechenova.jpg", "rb") as image:
         bot.send_photo(message.chat.id, image)
 
-    bot.send_message(message.chat.id, '''Здравствуйте. Я телеграм-бот по автоматизированной оценки вашего рациона питания! \n\n Вы можете добавлять продукты для оценки любым удобным способом сканируя QR-код, фотографируя чек или вводя наименование продукта вручную. Если у вас есть вопросы вы можете ознакомиться с инструкцией нажав на соответсвующую кнопку. \n\nДля повторного вызова напишите /start''', reply_markup=markup)
+    bot.send_message(
+        message.chat.id,
+        '''Здравствуйте. Я телеграм-бот по автоматизированной оценки вашего рациона питания! \n\nВы можете добавлять продукты для оценки любым удобным способом: сканируя QR-код, фотографируя чек или вводя наименование продукта вручную. Если у вас есть вопросы, вы можете ознакомиться с инструкцией, нажав на соответствующую кнопку. \n\nДля повторного вызова напишите /start.''',
+        reply_markup=inline_markup  # Inline-кнопки
+    )
+    bot.send_message(
+        message.chat.id,
+        "Вы также можете начать заново с помощью кнопки ниже.",
+        reply_markup=reply_markup  # Reply-кнопка "🔄 Начать"
+    )
 
-# Обработчик нажатия кнопок "Считать QR чека" и "Инструкция"
+# Обработчик для кнопки "🔄 Начать"
+@bot.message_handler(func=lambda message: message.text == "🔄 Начать")
+def restart_from_button(message):
+    start(message)
+
 @bot.callback_query_handler(func=lambda call: call.data in ["read_qr", "show_instruction", "request_photo", "get_nutrition"])
 def callback_handler(call):
     if call.data == "read_qr":
@@ -105,36 +168,62 @@ def callback_handler(call):
     elif call.data == "get_nutrition":
         get_nutrition(call.message)
 
-# Функция для запроса информации о продукте у пользователя
+# Функция для ввода информации вручную
 def get_nutrition(message):
-
-    # Создаем кнопку "Завершить"
-    markup = ReplyKeyboardMarkup(resize_keyboard=True)
+    # Заменяем кнопки на "🛑 Завершить ручной ввод"
+    markup = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
     finish_button = KeyboardButton("🛑 Завершить ручной ввод")
     markup.add(finish_button)
 
-    # Ожидаем ввод от пользователя и переходим к следующему шагу
-    bot.register_next_step_handler(message, process_nutrition_input)
     bot.send_message(message.chat.id, "Введите название продукта:", reply_markup=markup)
+    bot.register_next_step_handler(message, process_nutrition_input)
 
-# Асинхронная функция для обработки ввода пользователя
+# Обработка ввода
 def process_nutrition_input(message):
     if message.text == "🛑 Завершить ручной ввод":
-        bot.send_message(message.chat.id, "Процесс завершен. Если хотите, можете начать заново с /start.")
+        # Возвращаем кнопку "🔄 Начать"
+        start_markup = ReplyKeyboardMarkup(resize_keyboard=True)
+        start_button = KeyboardButton("🔄 Начать")
+        start_markup.add(start_button)
+
+        bot.send_message(
+            message.chat.id,
+            "Процесс завершен. Если хотите, можете начать заново с /start.",
+            reply_markup=start_markup
+        )
         return
 
-    # Получаем название продукта от пользователя
-    product_name = message.text
+    # Проверяем, что сообщение не пустое
+    if not message.text or message.text.strip() == "":
+        bot.send_message(message.chat.id, "Вы отправили пустое сообщение. Пожалуйста, введите название продукта.")
+        get_nutrition(message)
+        return
 
-    # Асинхронно получаем информацию о продукте
-    asyncio.run(send_nutrition_info(message.chat.id, product_name, message.from_user.id))
+    # Обрабатываем продукт
+    product_name = message.text.strip()  # Убираем лишние пробелы
+    try:
+        asyncio.run(send_nutrition_info(message.chat.id, product_name, message.from_user.id))
+    except Exception as e:
+        bot.send_message(message.chat.id, f"Произошла ошибка при обработке: {e}")
 
-    # Отправляем результат пользователю
+    # Снова ожидаем ввод
     get_nutrition(message)
+
+
 
 async def send_nutrition_info(chat_id, product_name, user_id):
     nutrition_info = await get_nutrition_facts(product_name, user_id)
-    bot.send_message(chat_id, f"ручной ввод '{product_name}':\n{nutrition_info}")
+    category_name = subcategory_to_category.get(nutrition_info[0], "Неизвестная категория")
+    bot.send_message(chat_id, f"Ручной ввод '{product_name}':\n{category_name}")
+    record_nutrition_request(chat_id, product_name, category_name)
+
+# Добавление кнопки "Начать"
+@bot.message_handler(commands=['start_manual'])
+def start_manual(message):
+    markup = ReplyKeyboardMarkup(resize_keyboard=True)
+    start_button = KeyboardButton("🔄 Начать")
+    markup.add(start_button)
+    bot.send_message(message.chat.id, "Нажмите 'Начать' для повторного вызова команды /start.", reply_markup=markup)
 
 def request_photo(message):
     # Инструкция для пользователя отправить медиа (фото или видео)
@@ -160,94 +249,96 @@ def show_instruction(message):
     bot.send_photo(message.chat.id, open("image/instr2.PNG", "rb"))
     bot.send_message(message.chat.id, '''- Поделитесь файлом указав приложение Telegram и выбрав наш телеграм-бот в качестве получателя. \n\n 2) Пришлите фотографию чека (ВАЖНО! Названия товаров должны быть хорошо различимы) или нажмите на кнопку "Фото чека" 3) Введите название товара нажав кнопку "Ввести вручную" \n\n В случае сканирования QR или отправки фотографии нужно выбрать товар который будет использован в вашем рационе.''', reply_markup=markup)
 
-# Чтение CSV с категориями
-category_mapping_df = pd.read_csv('category_mapping.csv')
-
-# Создание словаря для категорий
-id2label = dict(zip(category_mapping_df['Numeric Value'], category_mapping_df['Category Name']))
-model_name = "model/"  # Пример, используйте вашу модель
-model = BertForSequenceClassification.from_pretrained(model_name, num_labels=len(id2label))
-tokenizer = BertTokenizer.from_pretrained(model_name)
-model.eval()
-# Определение категории товара с помощью BERT
-def predict_category_with_confidence(product_name, model, tokenizer, max_length=200):
-    inputs = tokenizer(
-        product_name,
-        max_length=max_length,
-        padding='max_length',
-        truncation=True,
-        return_tensors="pt"
-    )
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model.to(device)
-    inputs = {key: val.to(device) for key, val in inputs.items()}
-
-    with torch.no_grad():
-        outputs = model(**inputs)
-        logits = outputs.logits
-        probabilities = torch.softmax(logits, dim=1).squeeze()
-        predicted_class = torch.argmax(probabilities).item()
-        confidence = probabilities[predicted_class].item()
-
-    # Получение метки категории по числовому значению
-    predicted_label = id2label.get(predicted_class, "Неизвестно")
-
-    return predicted_label, confidence
+## Чтение CSV с категориями
+#category_mapping_df = pd.read_csv('category_mapping.csv')
+#
+## Создание словаря для категорий
+#id2label = dict(zip(category_mapping_df['Numeric Value'], category_mapping_df['Category Name']))
+#model_name = "model/"  # Пример, используйте вашу модель
+#model = BertForSequenceClassification.from_pretrained(model_name, num_labels=len(id2label))
+#tokenizer = BertTokenizer.from_pretrained(model_name)
+#model.eval()
+## Определение категории товара с помощью BERT
+#def predict_category_with_confidence(product_name, model, tokenizer, max_length=200):
+#    inputs = tokenizer(
+#        product_name,
+#        max_length=max_length,
+#        padding='max_length',
+#        truncation=True,
+#        return_tensors="pt"
+#    )
+#    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#    model.to(device)
+#    inputs = {key: val.to(device) for key, val in inputs.items()}
+#
+#    with torch.no_grad():
+#        outputs = model(**inputs)
+#        logits = outputs.logits
+#        probabilities = torch.softmax(logits, dim=1).squeeze()
+#        predicted_class = torch.argmax(probabilities).item()
+#        confidence = probabilities[predicted_class].item()
+#
+#    # Получение метки категории по числовому значению
+#    predicted_label = id2label.get(predicted_class, "Неизвестно")
+#
+#    return predicted_label, confidence
 
 # Асинхронная функция для получения пищевых данных из Llama
 async def get_nutrition_facts(product_name, user_id):
-    print(f'необраб {product_name}')
-    predicted_label, confidence = predict_category_with_confidence(product_name, model, tokenizer)
-    response = ollama.chat(
-        model='llama3.2',
-        messages=[{'role': 'user', 'content': f'''
-                    Укажите только пищевые факты для продукта '{product_name}' в формате текстовых строк. Не добавляйте никаких комментариев. 
-                    Убедитесь, что каждая характеристика написана на отдельной строке апо шаблону и никак иначе. разделитель детятичных значений точка. Например:
-                    - Продукт: {product_name}
-                    - Калории: количество калорий
-                    - Белки: количество белков (в граммах)
-                    - Жиры: количество жиров (в граммах)
-                    - Углеводы: количество углеводов (в граммах)
-                    '''}]
-    )
+    # Преобразование введённого текста в вектор
+    user_vector = loaded_vectorizer.transform([product_name])
 
-    # Получаем ответ в текстовом формате
-    nutrition_info = response['message']['content'].replace(",", ".")
+    # Предсказание категории
+    predicted_category = loaded_model.predict(user_vector)[0]
+    print('predicted_category',type(predicted_category))
+    if predicted_category == '0':
+        system_prompt = (
+            'Вы торговый эксперт, классифицирующий товары по иерархии категорий, при определении особое внимание уделяй первому слову названия товара. Первое слово зачастую подсказка  к категории. Отвечаете строго по формату: supercategory: <super>; middlecategory: <middle>; subcategory: <sub>.'
+        )
+        prompt = f"{system_prompt}\nВопрос: {product_name}\nОтвет:"
+        inputs = tokenizer(prompt, return_tensors="pt").to(device)
 
-    print(nutrition_info)
-    # Инициализируем значения по умолчанию
-    calories = 0
-    protein = 0
-    fat = 0
-    carbohydrates = 0
+        # Генерация ответа на основе текущего контекста
+        output = model.generate(
+            **inputs,
+            max_length=500,
+            num_return_sequences=1,
+            do_sample=True,
+            top_p=0.05,
+            temperature=0.1,
+            top_k=10,
+            pad_token_id=model.config.pad_token_id
+        )
 
-    # Обрабатываем ответ, извлекая данные
-    for line in nutrition_info.splitlines():
-        if 'калории' in line.lower():
-            calories = extract_numeric_value(line)
-        elif 'белки' in line.lower():
-            protein = extract_numeric_value(line)
-        elif 'жиры' in line.lower():
-            fat = extract_numeric_value(line)
-        elif 'углеводы' in line.lower():
-            carbohydrates = extract_numeric_value(line)
+        # Декодирование и вывод сгенерированного текста
+        response_text = tokenizer.decode(output[0], skip_special_tokens=True)
 
-    # Записываем данные в базу данных
-    await record_nutrition_request(
-        user_id=user_id,
-        product=product_name,
-        calories=float(calories),
-        protein=float(protein),
-        fat=float(fat),
-        carbohydrates=float(carbohydrates)
+        # Обрезка лишнего текста (удаление всего до Super)
+        response_text = re.sub(r'.*Super:', 'Super:', response_text).strip()
 
-    )
-    print(f"Проверка значений перед записью: Калории={calories}, Белки={protein}, Жиры={fat}, Углеводы={carbohydrates}, категория={predicted_label}, уверенность = {confidence}")
-    # Добавляем результат предсказания категории и уверенности в текст ответа
-    nutrition_info += f"\n\nКатегория: {predicted_label}\nУверенность: {confidence}"
-    return nutrition_info  # Возвращаем словарь с данными о питании
+        # Извлекаем значения для supercategory, middlecategory и subcategory
+        supercategory_value = extract_values_after_keyword(response_text, "Super")
+        middlecategory_value = extract_values_after_keyword(response_text, "Middle")
+        subcategory_value = extract_values_after_keyword(response_text, "Sub")
 
 
+        # Логика для корректного использования subcategory и middlecategory
+        if subcategory_value == middlecategory_value:
+            subcategory_value = middlecategory_value
+        elif middlecategory_value and subcategory_value and subcategory_value.startswith(middlecategory_value):
+            pass  # Просто пропускаем изменение
+        print(subcategory_value, user_id)
+    else:
+        print('несъедобное', user_id)
+        subcategory_value = '16_1_1'
+    print(subcategory_value, user_id)
+    # Формируем отформатированный ответ
+    return subcategory_value, user_id
+
+def extract_values_after_keyword(response_text, keyword):
+    pattern = rf"{keyword}:\s*([\w\s_]+)"
+    matches = re.findall(pattern, response_text)
+    return matches[0] if matches else None
 def extract_numeric_value(line):
     match = re.search(r'([-+]?\d*\.\d+|\d+)', line)
     if match:
@@ -261,38 +352,44 @@ def extract_numeric_value(line):
     return 0.0  # Возвращаем 0.0, если ничего не найдено
 
 
-async def record_nutrition_request(user_id, product, calories, protein, fat, carbohydrates):
-    predicted_label, confidence = predict_category_with_confidence(product, model, tokenizer)
-    session = Session()  # Создаем новую сессию
-    nutrition_fact = NutritionRequest(
-        user_id=user_id,
-        product=product,
-        calories=calories,
-        protein=protein,
-        fat=fat,
-        carbohydrates=carbohydrates,
-        category=predicted_label
-    )
+#async def record_nutrition_request(user_id, product, calories, protein, fat, carbohydrates):
+#
+#    session = Session()  # Создаем новую сессию
+#    nutrition_fact = NutritionRequest(
+#        user_id=user_id,
+#        product=product,
+#        calories=calories,
+#        protein=protein,
+#        fat=fat,
+#        carbohydrates=carbohydrates
+#    )
+#
+#    try:
+#        session.add(nutrition_fact)  # Добавляем объект в сессию
+#        session.commit()  # Сохраняем изменения в базе данных
+#    except IntegrityError as e:
+#        session.rollback()  # Откатываем изменения в случае ошибки
+#        print(f"Ошибка записи в БД: {e}")
+#    finally:
+#        session.close()  # Закрываем сессию
 
-    try:
-        session.add(nutrition_fact)  # Добавляем объект в сессию
-        session.commit()  # Сохраняем изменения в базе данных
-    except IntegrityError as e:
-        session.rollback()  # Откатываем изменения в случае ошибки
-        print(f"Ошибка записи в БД: {e}")
-    finally:
-        session.close()  # Закрываем сессию
 
-def image_to_base64(image, format="JPEG"):  # Изменяем формат на "JPEG"
-    # Создаем объект BytesIO для хранения изображения
-    buffered = io.BytesIO()
-    # Сохраняем изображение в BytesIO объект в указанном формате (JPEG)
+# Словари для хранения связи UUID с продуктами
+user_selected_products_images = {}
+user_selected_products_json = {}
+
+max_buttons = 50
+
+
+# Функция для преобразования изображения в base64
+def image_to_base64(image, format="JPEG"):
+    buffered = BytesIO()
     image.save(buffered, format=format)
-    # Получаем данные байтов из BytesIO объекта
     img_bytes = buffered.getvalue()
-    # Кодируем байтовые данные в base64
     img_base64 = base64.b64encode(img_bytes).decode('utf-8')
     return img_base64
+
+
 # Обработчик изображений
 @bot.message_handler(content_types=['photo'])
 def handle_photo(message):
@@ -300,51 +397,10 @@ def handle_photo(message):
     file = bot.download_file(file_info.file_path)
     image = Image.open(BytesIO(file))
     base64_image = image_to_base64(image)
-    # Извлечение потенциальных названий продуктов с помощью LLaMA
-    asyncio.run(extract_product_names(message.chat.id, base64_image))
+    asyncio.run(extract_product_names(message.chat.id, base64_image, source='image'))
 
-# Асинхронная функция для извлечения названий продуктов из распознанного текста
-async def extract_product_names(chat_id, base64_image):
-    response = ollama.chat(
-        model="llama3.2-vision",
-        messages=[{
-            "role": "user",
-            "content": "This image is a sales receipt. The output should be in this format - <Product name> list without numbering. Do not output anything else. Important Product maybe on Russian language. No English",
-            "images": [base64_image]
-        }],
-    )
-    # Логирование ответа для отладки
-    print("Response from LLaMA:", response)  # Для отладки, можно убрать после исправления
 
-    # Получение контента без проверки JSON
-    content = response['message']['content']
-
-    # Очищаем ответ, удаляя все символы, кроме цифр, латиницы и кириллицы
-    cleaned_content = re.sub(r'[^a-zA-Zа-яА-Я0-9\s\n,]', '', content)  # Оставляем только буквы, цифры и пробелы, а также \n
-
-    # Разделение по новой строке (\n) и удаление лишних пробелов
-    products = [product.strip() for product in cleaned_content.split('\n') if product.strip()]
-
-    # Если нет названий продуктов, отправляем сообщение об ошибке
-    if not products:
-        bot.send_message(chat_id, "Не удалось извлечь названия продуктов. Пожалуйста, попробуйте еще раз.")
-        return
-
-    user_selected_products[chat_id] = products
-    send_product_selection(chat_id, '\n'.join(products))  # Передаем строку, разделенную \n
-
-def find_names(data, names):
-    # Проверяем, является ли data списком
-    if isinstance(data, list):
-        for item in data:
-            find_names(item, names)  # Рекурсивный вызов для каждого элемента списка
-    elif isinstance(data, dict):
-        for key, value in data.items():
-            if key == 'name':  # Предполагаем, что имена продуктов находятся под ключом 'name'
-                names.append(value)  # Добавляем значение имени в список
-            else:
-                find_names(value, names)  # Рекурсивно обрабатываем значения словаря
-
+# Обработчик документа JSON
 @bot.message_handler(content_types=['document'])
 def handle_document(message):
     file_id = message.document.file_id
@@ -355,90 +411,112 @@ def handle_document(message):
         data = json.loads(file.decode('utf-8'))
         names = []
         find_names(data, names)
-        user_selected_products[message.chat.id] = names
-
-        send_product_selection(message.chat.id, names)
-
         if not names:
             bot.send_message(message.chat.id, "В файле не найдены строки с ключом 'name'.")
+            return
+        send_product_selection(message.chat.id, names, source='json')
     except json.JSONDecodeError:
-        bot.send_message(message.chat.id, "Произошла ошибка при обработке JSON-файла. Проверьте его формат.")
+        bot.send_message(message.chat.id, "Ошибка при обработке JSON-файла. Проверьте его формат.")
 
-def send_product_selection(chat_id, message_content):
-    # Разбиваем строку по символу новой строки
-    product_names = message_content.split('\n')
 
-    markup = InlineKeyboardMarkup()
+# Асинхронная функция для извлечения названий продуктов из изображения
+async def extract_product_names(chat_id, base64_image, source):
+    response = ollama.chat(
+        model="llama3.2-vision",
+        messages=[{
+            "role": "user",
+            "content": "This image is a sales receipt. The output should be in this format - <Product name> list without numbering.",
+            "images": [base64_image]
+        }]
+    )
 
-    # Маппинг для хранения идентификаторов продуктов
-    product_id_map = {}
+    content = response['message']['content']
+    cleaned_content = re.sub(r'[^a-zA-Zа-яА-Я0-9\s\n,]', '', content)
+    product_list = [product.strip() for product in cleaned_content.split('\n') if product.strip()]
 
-    # Проходим по каждому товару и создаем для него кнопку
-    for product_name in product_names:
-        # Ограничение длины до 64 символов
-        product_name = product_name[:64]
+    if not product_list:
+        bot.send_message(chat_id, "Не удалось извлечь названия продуктов. Попробуйте еще раз.")
+        return
 
-        # Генерируем уникальный идентификатор для каждого продукта
-        product_id = str(uuid4())  # уникальный идентификатор
-        product_id_map[product_id] = product_name
+    if source == 'image':
+        send_product_selection(chat_id, product_list, source)
+    else:
+        send_product_selection2(chat_id, product_list)
 
-        # Формируем callback_data с использованием уникального идентификатора
-        callback_data = f"get_info_{product_id}"
 
-        # Создаем кнопку с названием товара
-        button = InlineKeyboardButton(
-            f"Получить данные: {product_name}",
-            callback_data=callback_data
-        )
+# Функция для отправки кнопок с UUID для изображения
+def send_product_selection(chat_id, product_list, source):
+    markup = types.InlineKeyboardMarkup(row_width=1)
+
+    if source == 'image':
+        user_selected_products_images[chat_id] = {}
+    else:
+        user_selected_products_json[chat_id] = {}
+
+    for product in product_list:
+        product_uuid = str(uuid.uuid4())
+
+        if source == 'image':
+            user_selected_products_images[chat_id][product_uuid] = product
+        else:
+            user_selected_products_json[chat_id][product_uuid] = product
+
+        button = types.InlineKeyboardButton(text=product, callback_data=product_uuid)
         markup.add(button)
 
-    # Добавляем кнопку для обработки всех товаров
-    markup.add(InlineKeyboardButton("Обработать всё", callback_data="process_all"))
-
-    # Отправка сообщения с кнопками
     bot.send_message(chat_id, "Выберите товар для получения информации:", reply_markup=markup)
 
-    # Сохраняем маппинг идентификаторов и продуктов для использования при обработке
-    user_selected_products[chat_id] = product_id_map
 
+# Функция для отправки кнопок с названием продукта
+def send_product_selection2(chat_id, product_list):
+    markup = types.InlineKeyboardMarkup(row_width=1)
 
+    for product in product_list:
+        callback_data = re.sub(r'[^a-zA-Zа-яА-Я0-9_]', '_', product[:64])
+        button = types.InlineKeyboardButton(text=product, callback_data=callback_data)
+        markup.add(button)
 
+    bot.send_message(chat_id, "Выберите товар для получения информации:", reply_markup=markup)
 
-# Обработчик выбора товара
-@bot.callback_query_handler(func=lambda call: call.data.startswith("get_info_"))
-def send_product_info(call):
-    # Извлекаем уникальный идентификатор из callback_data
-    product_id = call.data.split("_")[2]
-    user_id = call.message.chat.id
+# Асинхронная функция обработки выбора товара
+async def handle_product_selection_async(call):
+    product_uuid = call.data
 
-    # Получаем название продукта из маппинга
-    product_name = user_selected_products[user_id].get(product_id)
-
-    if product_name:
-        asyncio.run(send_nutrition_facts_async(call.message.chat.id, product_name, user_id))
-
-
-async def send_nutrition_facts_async(chat_id, product_name, user_id):
-    nutrition_facts = await get_nutrition_facts(product_name, user_id)
-    bot.send_message(chat_id, f"'{product_name}':\n{nutrition_facts}") #фото
-
-# Обработчик нажатия кнопки "Обработать всё"
-# Обработчик нажатия кнопки "Обработать всё"
-@bot.callback_query_handler(func=lambda call: call.data == "process_all")
-def process_all_products(call):
-    chat_id = call.message.chat.id
-    if chat_id in user_selected_products:
-        product_id_map = user_selected_products[chat_id]
-        # Получаем список всех продуктов по их идентификаторам
-        all_products = list(product_id_map.values())
-        asyncio.run(send_all_products_info_async(chat_id, all_products, chat_id))
+    if product_uuid in user_selected_products_images.get(call.message.chat.id, {}):
+        product_name = user_selected_products_images[call.message.chat.id].get(product_uuid, "Товар не найден")
     else:
-        bot.send_message(chat_id, "Нет выбранных товаров для обработки.")
+        product_name = user_selected_products_json.get(call.message.chat.id, {}).get(product_uuid, "Товар не найден")
 
-async def send_all_products_info_async(chat_id, products, user_id):
-    for product_name in products:
-        nutrition_facts = await get_nutrition_facts(product_name, user_id)
-        bot.send_message(chat_id, f"Пищевая информация для '{product_name}':\n{nutrition_facts}")
+    # Получаем данные о товаре
+    subcategory_value, user_id = await get_nutrition_facts(product_name, call.message.chat.id)
+
+    # Заменяем подкатегорию на название категории
+    category_name = subcategory_to_category.get(subcategory_value, "Неизвестная категория")
+
+    # Отправляем результат пользователю
+    bot.send_message(call.message.chat.id, f"Вы выбрали: {product_name}\nКатегория: {category_name}")
+    record_nutrition_request(user_id, product_name, category_name)
+
+# Обработчик callback-запроса
+@bot.callback_query_handler(func=lambda call: True)
+def handle_product_selection(call):
+    # Создаем новый поток для запуска асинхронной функции
+    thread = threading.Thread(target=asyncio.run, args=(handle_product_selection_async(call),))
+    thread.start()
+
+
+# Функция для извлечения названий продуктов из JSON
+def find_names(data, names):
+    if isinstance(data, list):
+        for item in data:
+            find_names(item, names)
+    elif isinstance(data, dict):
+        for key, value in data.items():
+            if key == 'name':
+                names.append(value)
+            else:
+                find_names(value, names)
+
 
 # Запуск бота
-bot.polling()
+bot.polling(none_stop=True)
