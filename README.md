@@ -13,8 +13,9 @@ pip install -r requirements.txt
 
 python maintg.py
 
-ссылка на модель которую нужно добавить в папку /models 
-https://drive.google.com/drive/folders/1I06Mz8BPWr2i5vJrGvoBZa_H9fru_af-?usp=sharing
+ссылка на модель которую нужно добавить в корневую папку  
+https://drive.google.com/file/d/1a6sGK0cDlk6nGWbL_xUCeYh-QKPCZVKe/view?usp=drive_link
+https://drive.google.com/file/d/1n2OONr718lQ5KLVLaBJnmcHfhleL6xDq/view?usp=drive_link
 
 На сервере необходимо использование ollama server https://ollama.com/download
 
