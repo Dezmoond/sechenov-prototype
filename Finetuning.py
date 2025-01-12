@@ -7,7 +7,7 @@ device = torch.device("cuda")
 
 torch.cuda.empty_cache()
 # Загрузка модели и токенизатора
-model_path = "E:/KPI/1LAMA1/lama9"
+model_path = "lama/"
 tokenizer = PreTrainedTokenizerFast.from_pretrained(model_path)
 model = AutoModelForCausalLM.from_pretrained(model_path).to(device)
 
@@ -22,7 +22,7 @@ for name, param in model.named_parameters():
         param.requires_grad = False
 
 # Загрузка данных из файла data3.txt в формате JSON
-file_path = "D:/anaconda3/envs/clon/lamasmal/333processed_dataset2.txt"  #Путь к вашему файлу
+file_path = "dataset/batchonlyllama_1.txt"  #Путь к вашему файлу
 
 # Открываем и читаем JSON данные
 with open(file_path, "r", encoding="utf-8") as f:
@@ -92,5 +92,5 @@ trainer = Trainer(
 trainer.train()
 
 # Сохранение модели и токенизатора
-model.save_pretrained("E:/KPI/1LAMA1/lama10")
-tokenizer.save_pretrained("E:/KPI/1LAMA1/lama10")
+model.save_pretrained("lama/lama1")
+tokenizer.save_pretrained("lama/lama1")
