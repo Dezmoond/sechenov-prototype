@@ -4,7 +4,6 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeybo
 from telebot import TeleBot, types
 import torch
 import threading
-
 import json
 import ollama
 import asyncio
@@ -44,7 +43,7 @@ with open(vectorizer_path, 'rb') as file:
 with open(model_forest, 'rb') as file:
     loaded_model = pickle.load(file)
 # Путь к модели
-model_path = "E:/KPI/1LAMA1/lama8"
+model_path = "lama"
 
 # Загрузка токенизатора и модели
 tokenizer = PreTrainedTokenizerFast.from_pretrained(model_path)
@@ -84,10 +83,6 @@ bot = telebot.TeleBot(TOKEN)
 
 # Хранение выбранных товаров для каждого пользователя
 user_selected_products = {}
-
-# Установка пути к Tesseract OCR (если требуется)
-#pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
-
 
 class NutritionRequest(Base):
     __tablename__ = 'nutrition_requests'
@@ -317,28 +312,6 @@ def extract_numeric_value(line):
             return 0.0  # Возвращаем 0.0 в случае ошибки
     print(f"Не удалось найти число в строке: {line}")
     return 0.0  # Возвращаем 0.0, если ничего не найдено
-
-
-#async def record_nutrition_request(user_id, product, calories, protein, fat, carbohydrates):
-#
-#    session = Session()  # Создаем новую сессию
-#    nutrition_fact = NutritionRequest(
-#        user_id=user_id,
-#        product=product,
-#        calories=calories,
-#        protein=protein,
-#        fat=fat,
-#        carbohydrates=carbohydrates
-#    )
-#
-#    try:
-#        session.add(nutrition_fact)  # Добавляем объект в сессию
-#        session.commit()  # Сохраняем изменения в базе данных
-#    except IntegrityError as e:
-#        session.rollback()  # Откатываем изменения в случае ошибки
-#        print(f"Ошибка записи в БД: {e}")
-#    finally:
-#        session.close()  # Закрываем сессию
 
 
 # Словари для хранения связи UUID с продуктами
