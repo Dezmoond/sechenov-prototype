@@ -6,9 +6,9 @@ pandas==2.2.3
 SQLAlchemy==2.0.36
 ollama==0.3.3
 pip install scikit-learn==1.5.2
-torch==2.4.1+cu118
 scikit-image==0.24.0
 scikit-learn==1.5.2
 safetensors==0.4.5
 pydantic==2.9.2
 pydantic_core==2.23.4
+torch==2.4.1+cu118
