@@ -25,7 +25,7 @@ import pickle
 from transformers import PreTrainedTokenizerFast, AutoModelForCausalLM
 
 # Создаем словарь для подкатегорий
-df = pd.read_csv('merged_file.csv')
+df = pd.read_csv('merged_file.csv', sep=';')
 
 # Создадим словарь для быстрого поиска названия категории по подкатегории
 subcategory_to_category = dict(zip(df['Sub'], df['Category Name']))
