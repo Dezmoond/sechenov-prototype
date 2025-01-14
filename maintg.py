@@ -362,10 +362,10 @@ def handle_document(message):
 # Асинхронная функция для извлечения названий продуктов из изображения
 async def extract_product_names(chat_id, base64_image, source):
     response = ollama.chat(
-        model="llama3.2-vision",
+        model="llama3.2-vision", #llama3.2-vision:11b или llama3.2-vision:90b
         messages=[{
             "role": "user",
-            "content": "This image is a sales receipt. The output should be in this format - <Product name> list without numbering.",
+            "content": "Не пиши лишнего, только названия продуктов. This image is a sales receipt. The output should be in this format - <Product name> list without numbering.",
             "images": [base64_image]
         }]
     )
