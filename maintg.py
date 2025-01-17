@@ -16,6 +16,7 @@ import pandas as pd
 import re
 import csv
 import base64
+import time
 import io
 from sqlalchemy import create_engine, Column, Integer, String, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker  # Изменен импорт
@@ -459,4 +460,13 @@ def find_names(data, names):
 
 
 # Запуск бота
-bot.polling(none_stop=True)
+def start_polling():
+    while True:
+        try:
+            bot.polling(none_stop=True, timeout=20, long_polling_timeout=20)
+        except Exception as e:
+            print(f"Произошла ошибка: {e}")
+            time.sleep(5)  # Ждем перед повторной попыткой
+
+if __name__ == '__main__':
+    start_polling()
